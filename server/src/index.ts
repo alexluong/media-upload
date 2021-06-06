@@ -3,11 +3,9 @@ import cors from "cors";
 import multer from "multer";
 import ws from "ws";
 import { URL } from "url";
-import jimp from "jimp";
-import { nanoid } from "nanoid";
-import { splitFileName } from "./utils";
+import { splitFileName, processImage } from "./utils";
 
-const PORT = 4000;
+const PORT = 8000;
 const SERVER_URL = `http://localhost:${PORT}`;
 
 const app = express();
@@ -19,29 +17,34 @@ const upload = multer();
 
 app.use("/images", express.static("images"));
 
-app.get("/", (request, response) => response.status(200).send({ hello: "world" }));
-
 app.post("/upload", upload.single("media"), async (request, response) => {
-  const image = await jimp.read(request.file.buffer);
   const [fileName, fileExtension] = splitFileName(request.file.originalname);
-  console.log({ fileName, fileExtension });
-  const newName = `${fileName}-${nanoid()}.${fileExtension}`;
-  image.write(`images/${newName}`);
-  response.status(200).send({ url: `${SERVER_URL}/images/${newName}` });
-});
-
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Server listening at http://localhost:${PORT}`);
+  const url = await processImage({
+    media: { name: fileName, extension: fileExtension, buffer: request.file.buffer },
+    compression: request.body.compression,
+    SERVER_URL,
+  });
+  response.status(200).send({ url });
 });
 
 const wss = new ws.Server({ noServer: true });
 wss.on("connection", (socket) => {
-  socket.on("message", (message) => {
-    // let index = 0;
-    // setInterval(() => socket.send(JSON.stringify({ value: index++ })), 1000);
-    setTimeout(() => {
-      socket.send("hello");
-    }, 2000);
+  socket.on("message", async (message) => {
+    const value = JSON.parse(message as string);
+    const url = await processImage({
+      media: value.media,
+      compression: value.compression,
+      SERVER_URL,
+    });
+    let index = 0;
+    const interval = setInterval(() => {
+      if (index === 10) {
+        socket.send(JSON.stringify({ type: "success", url }));
+        clearInterval(interval);
+      } else {
+        socket.send(JSON.stringify({ type: "progress", progress: index++ * 10 }));
+      }
+    }, 300);
   });
 });
 
@@ -50,6 +53,10 @@ function handleUpgrade(wss: ws.Server, request: any, socket: any, head: any) {
     wss.emit("connection", ws, request);
   });
 }
+
+const server = app.listen(PORT, () => {
+  console.log(`🚀 Server listening at http://localhost:${PORT}`);
+});
 
 server.on("upgrade", (request, socket, head) => {
   const url = new URL(request.url, SERVER_URL);

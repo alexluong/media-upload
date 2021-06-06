@@ -1,4 +1,4 @@
-import { useReducer, useCallback } from "react";
+import { useReducer, useMemo, useCallback } from "react";
 
 export interface UploadState<Config> {
   file?: File;
@@ -63,23 +63,24 @@ export interface UploadActions<Config> {
   selectFile: (file: File) => void;
   updateConfig: (partialConfig: Partial<Config>) => void;
   updateProgress: (progress: number) => void;
-  upload: () => Promise<string>;
+  startUpload: () => void;
+  finishUpload: (uploadedSrc: string) => void;
+  failUpload: (error: Error) => void;
 }
 
 export interface UploadHook<Config> extends UploadState<Config>, UploadActions<Config> {}
 
 export interface UploadHookArgs<Config> {
   initialConfig?: Config;
-  upload: (upload: UploadState<Config>, actions: UploadActions<Config>) => Promise<string>;
 }
 
-export function useUpload<Config = Record<string, any>>(
-  args: UploadHookArgs<Config>,
-): UploadHook<Config> {
+export function useUpload<Config = Record<string, any>>({
+  initialConfig,
+}: UploadHookArgs<Config>): UploadHook<Config> {
   const [state, dispatch] = useReducer<
     (state: UploadState<Config>, action: UploadAction<Config>) => UploadState<Config>,
     InitArgs<Config>
-  >(reducer, { config: args.initialConfig }, init);
+  >(reducer, { config: initialConfig }, init);
 
   const selectFile = useCallback(
     (file: File) => dispatch({ type: "SELECT_FILE", payload: { file } }),
@@ -92,24 +93,37 @@ export function useUpload<Config = Record<string, any>>(
     [],
   );
 
-  const upload = useCallback(async () => {
-    try {
-      dispatch({ type: "START_UPLOAD" });
-      const uploadedSrc = await args.upload(state, actions);
-      dispatch({ type: "FINISH_UPLOAD", payload: { uploadedSrc } });
-      return uploadedSrc;
-    } catch (error) {
-      console.error(error);
-      dispatch({ type: "FAIL_UPLOAD", payload: { error } });
-    }
-  }, [args.upload]);
+  const startUpload = useCallback(async () => dispatch({ type: "START_UPLOAD" }), []);
+  const finishUpload = useCallback(
+    async (uploadedSrc: string) => dispatch({ type: "FINISH_UPLOAD", payload: { uploadedSrc } }),
+    [],
+  );
+  const failUpload = useCallback(
+    (error: Error) => dispatch({ type: "FAIL_UPLOAD", payload: { error } }),
+    [],
+  );
 
   const updateProgress = useCallback(
     (progress: number) => dispatch({ type: "UPDATE_PROGRESS", payload: { progress } }),
     [],
   );
 
-  const actions: UploadActions<Config> = { selectFile, updateConfig, upload, updateProgress };
+  const actions: UploadActions<Config> = {
+    selectFile,
+    updateConfig,
+    updateProgress,
+    startUpload,
+    finishUpload,
+    failUpload,
+  };
 
-  return { ...state, ...actions };
+  const returnValue = useMemo(
+    () => ({
+      ...state,
+      ...actions,
+    }),
+    [state],
+  );
+
+  return returnValue;
 }

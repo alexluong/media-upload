@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { UploadHook } from "./useUpload";
 
-export function useVideoPreview(upload: UploadHook) {
+export function useVideoPreview(upload: UploadHook<any>) {
   const { file } = upload;
   const [videoSrc, setVideoSrc] = useState<string>();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -9,7 +9,7 @@ export function useVideoPreview(upload: UploadHook) {
   useEffect(() => {
     if (file) {
       const reader = new FileReader();
-      reader.onload = function (event) {
+      reader.onload = (event) => {
         setVideoSrc(event.target?.result as string);
         videoRef.current.load();
       };
